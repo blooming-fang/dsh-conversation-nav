@@ -1,0 +1,34 @@
+{
+  "name": "dsh-conversation-nav",
+  "version": "0.2.0",
+  "private": true,
+  "description": "会话导航 (Conversation Navigation) floating panel for the dsh web GUI: lists the user's past questions and jumps the conversation to the selected one",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "lib/client.js",
+    "lib/client.js.map",
+    "src/index.js"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build-client.mjs",
+    "pack": "npm pack"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

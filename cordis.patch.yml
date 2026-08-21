@@ -1,0 +1,9 @@
+# dsh-conversation-nav bundle patch: mounts the conversation-navigation plugin
+# row into the web profile composition. The row is a dual-face entry: its node
+# half is the (empty) host apply in src/index.js, and its browser half is the
+# dsh.client bundle served at /plugins/dsh-conversation-nav/client.js by
+# client-modules.
+
+- insert:
+    - id: dsh-conversation-nav
+      name: dsh-conversation-nav

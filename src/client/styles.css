@@ -1,0 +1,159 @@
+/* dsh-conversation-nav floating conversation-navigation panel.
+ * `.qnav-overlay` is a fixed full-height anchor at the conversation column's
+ * right edge (inline `right`, `pointer-events: none`). The trigger and the
+ * panel are its children and opt back into pointer events; the column layout
+ * centers them vertically.
+ *
+ * The panel and trigger use a fixed light palette (white background, dark
+ * text) so they stay readable in both light and dark host themes.
+ */
+
+.qnav-overlay {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* The trigger button: a compact vertical pill at the column's right edge. */
+.qnav-trigger {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 36px;
+  padding: 12px 0;
+  margin-right: 8px;
+  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 18px;
+  background: #ffffff;
+  color: #5f6672;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.qnav-trigger:hover {
+  color: #4f6ef2;
+  border-color: rgba(127, 127, 127, 0.35);
+  transform: translateY(-1px);
+}
+
+.qnav-trigger .qnav-trigger-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.qnav-trigger .qnav-trigger-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The expanded panel: a narrow card beside the column's right edge. */
+.qnav-panel {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  max-height: min(60vh, 480px);
+  margin-right: 8px;
+  border: 1px solid rgba(127, 127, 127, 0.25);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.qnav-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
+  color: #1f2329;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.qnav-panel-close {
+  pointer-events: auto;
+  border: none;
+  background: none;
+  color: #5f6672;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.qnav-panel-close:hover {
+  color: #1f2329;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.qnav-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qnav-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #1f2329;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.qnav-item:hover {
+  background: #f0f0f0;
+}
+
+.qnav-item-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.qnav-empty {
+  padding: 16px 12px;
+  color: #5f6672;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+/* Flash highlight applied to the target chat row after a jump. */
+.qnav-flash {
+  animation: qnav-flash 1.4s ease-out;
+  border-radius: 8px;
+}
+
+@keyframes qnav-flash {
+  0% { background: #4f6ef2; opacity: 0.9; }
+  100% { background: transparent; opacity: 1; }
+}
