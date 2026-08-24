@@ -1,6 +1,6 @@
 {
   "name": "dsh-conversation-nav",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "会话导航 (Conversation Navigation) floating panel for the dsh web GUI: lists the user's past questions and jumps the conversation to the selected one",
   "type": "module",
