@@ -264,21 +264,21 @@ function QnavPanel(props) {
     if (key === undefined) {
       // Row outside the loaded window: page the window back to it on demand.
       setLocating(true)
-      try {
-        key = await resolveJumpKey(item.seq)
-      } finally {
+      key = await resolveJumpKey(item.seq)
+      if (key === undefined) {
         setLocating(false)
+        return
       }
     }
-    if (key === undefined) return
     // Prepended rows reach the DOM one React commit after loadOlder resolves;
-    // poll briefly so a fresh page is not missed by the first query.
+    // rendering many pages can take seconds, so poll generously.
     const selector = `[data-chat-anchor-key="${CSS.escape(key)}"]`
     let row = document.querySelector(selector)
-    for (let waited = 0; row === null && waited < 40; waited++) {
-      await new Promise((resolve) => setTimeout(resolve, 50))
+    for (let waited = 0; row === null && waited < 100; waited++) {
+      await new Promise((resolve) => setTimeout(resolve, 100))
       row = document.querySelector(selector)
     }
+    setLocating(false)
     if (row === null) return
     row.scrollIntoView({ behavior: 'smooth', block: 'start' })
     row.classList.add('qnav-flash')
@@ -293,6 +293,7 @@ function QnavPanel(props) {
         'div',
         { className: 'qnav-panel-header' },
         React.createElement('span', null, t('panel.title')),
+        locating ? React.createElement('span', { className: 'qnav-head-status' }, t('panel.locating')) : null,
         React.createElement(
           'button',
           {
@@ -304,7 +305,7 @@ function QnavPanel(props) {
           '\u00d7',
         ),
       ),
-      (indexing || locating) ? React.createElement('div', { className: 'qnav-loading' }, locating ? t('panel.locating') : t('panel.loading')) : null,
+      indexing ? React.createElement('div', { className: 'qnav-loading' }, t('panel.loading')) : null,
       questions.length === 0
         ? React.createElement('div', { className: 'qnav-empty' }, t('panel.empty'))
         : React.createElement(
