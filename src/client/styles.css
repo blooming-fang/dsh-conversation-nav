@@ -145,6 +145,14 @@
   text-align: center;
 }
 
+/* Full-history preload progress line under the panel header. */
+.qnav-loading {
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(127, 127, 127, 0.15);
+  color: #5f6672;
+  font-size: 11.5px;
+}
+
 /* Flash highlight applied to the target chat row after a jump. */
 .qnav-flash {
   animation: qnav-flash 1.4s ease-out;

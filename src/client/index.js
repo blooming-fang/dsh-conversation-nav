@@ -9,6 +9,10 @@
  * entry (strict session scope) then reads the conversation snapshot through
  * the `useSession` standard hook, lists the user messages, and scrolls the
  * chat to the chosen message's rendered row (`[data-chat-anchor-key]`).
+ *
+ * On mount the panel pages the session's full history in (serial loadOlder()
+ * through the sessions service face), so questions outside the initially
+ * loaded tail page still appear in the list and stay jumpable.
  */
 import * as React from 'react'
 import styles from './styles.css'
@@ -19,15 +23,45 @@ const zh = {
   'panel.title': '会话导航',
   'panel.empty': '暂无提问',
   'panel.close': '关闭',
+  'panel.loading': '正在加载全部提问…',
 }
 
 const en = {
   'panel.title': 'Session',
   'panel.empty': 'No questions yet',
   'panel.close': 'Close',
+  'panel.loading': 'Loading all questions…',
 }
 
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'sessions']
+
+/**
+ * Page one session's history window back to its start, so the navigation list
+ * covers every question rather than only the loaded tail page. Serial
+ * `loadOlder()` calls until `hasMore` clears; bounded wait and round caps keep
+ * a never-opening or stalled window from hanging the loop.
+ * @param sessions - the client sessions service face.
+ * @param sessionId - the session to fully load.
+ * @returns completion of the paging loop.
+ */
+async function loadAllHistory(sessions, sessionId) {
+  const actx = sessions.scope(sessionId)
+  const face = actx === undefined ? undefined : sessions.sessionOf(actx)
+  if (face === undefined) return
+  // loadOlder is a no-op before the window opens; wait out the tail-page pull.
+  for (let waited = 0; waited < 100 && face.getSnapshot().openState !== 'open'; waited++) {
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  for (let round = 0; round < 400; round++) {
+    const snap = face.getSnapshot()
+    if (snap.openState !== 'open' || !snap.hasMore) return
+    const before = snap.chat.order.length
+    await face.loadOlder()
+    // A round that grew nothing while hasMore held means the paging stalled
+    // (in-flight guard or transport failure) — stop instead of spinning.
+    if (face.getSnapshot().chat.order.length === before) return
+  }
+}
 
 /**
  * Extract the plain text of a user message node's content blocks.
@@ -112,13 +146,27 @@ function QnavOverlay(props) {
 /**
  * The session-scoped panel: the floating trigger plus the expandable list of
  * the session's user questions. Clicking a question scrolls the chat to that
- * message's row and flashes it.
- * @param props - standard kit (useSession, t).
+ * message's row and flashes it. Mounting pages the full history in (see
+ * loadAllHistory) so the list covers questions outside the loaded tail page.
+ * @param props - standard kit (useSession, t, sessionId) plus the injected
+ *   loadAllHistory callback.
  */
 function QnavPanel(props) {
-  const { useSession, t } = props
+  const { useSession, t, sessionId, loadAllHistory } = props
   const [expanded, setExpanded] = React.useState(true)
   const right = useCenterRight()
+
+  // Kick the full-history preload once per session. The callback is rebuilt by
+  // the slot inject factory on every render (identity-unstable), so the latest
+  // one rides a ref while the effect keys on the session id only.
+  const loadRef = React.useRef(loadAllHistory)
+  loadRef.current = loadAllHistory
+  React.useEffect(() => {
+    void loadRef.current()
+  }, [sessionId])
+
+  // True while the preload is still paging (or the user is paging manually).
+  const loadingAll = useSession((s) => s.hasMore || s.loadingOlder, (a, b) => a === b)
 
   // Derive the ordered user-message list from the chat snapshot. `order` is a
   // stable reference that changes only on structural moves; nodes are read
@@ -168,6 +216,7 @@ function QnavPanel(props) {
           '\u00d7',
         ),
       ),
+      loadingAll ? React.createElement('div', { className: 'qnav-loading' }, t('panel.loading')) : null,
       questions.length === 0
         ? React.createElement('div', { className: 'qnav-empty' }, t('panel.empty'))
         : React.createElement(
@@ -233,5 +282,8 @@ export function apply(ctx) {
   ctx.slots.inject('qnav.panel', () => ctx.slots.register({
     name: 'qnav.panel',
     locale: NS,
+    inject: (sessionId) => ({
+      loadAllHistory: () => loadAllHistory(ctx.sessions, sessionId),
+    }),
   }, QnavPanel))
 }
