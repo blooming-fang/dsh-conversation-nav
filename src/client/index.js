@@ -94,9 +94,10 @@ async function resolveJumpKey(sessions, sessionId, seq) {
       const node = snap.chat.nodes.get(key)
       // Both user-authored kinds count: turn-opening questions render as
       // 'user', mid-turn ones as 'steering' — same source.kind on the wire.
-      // The event seq lives on the node payload (`data.seq`), not on the
-      // ChatConversationViewNode shell.
-      if (node !== undefined && (node.kind === 'user' || node.kind === 'steering') && node.data?.seq === seq) {
+      // The event seq rides both the payload (`data.seq`) and the view-node
+      // anchor (`anchorSeq`); accept either as a match.
+      if (node !== undefined && (node.kind === 'user' || node.kind === 'steering')
+        && (node.data?.seq === seq || node.anchorSeq === seq)) {
         return key
       }
     }
@@ -239,7 +240,7 @@ function QnavPanel(props) {
       if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
       const text = messageText(node.data.content)
       if (text === '') continue
-      out.push({ key, seq: node.data.seq, text })
+      out.push({ key, seq: node.data.seq ?? node.anchorSeq, text })
     }
     return out
   }, (a, b) => {
@@ -260,12 +261,14 @@ function QnavPanel(props) {
   }, [remoteQuestions, liveQuestions])
 
   const jump = async (item) => {
+    console.debug('[qnav] jump', item)
     let key = item.key
     if (key === undefined) {
       // Row outside the loaded window: page the window back to it on demand.
       setLocating(true)
       key = await resolveJumpKey(item.seq)
       if (key === undefined) {
+        console.debug('[qnav] jump: key unresolved for seq', item.seq)
         setLocating(false)
         return
       }
@@ -279,8 +282,23 @@ function QnavPanel(props) {
       row = document.querySelector(selector)
     }
     setLocating(false)
-    if (row === null) return
-    row.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (row === null) {
+      console.debug('[qnav] jump: row never appeared', selector)
+      return
+    }
+    // A freshly paged window keeps re-rendering while the smooth scroll runs,
+    // which can cancel it; verify the row actually enters the viewport and
+    // retry, falling back to an instant scroll.
+    const inViewport = (el) => {
+      const rect = el.getBoundingClientRect()
+      return rect.top >= -20 && rect.top < window.innerHeight - 60
+    }
+    for (let attempt = 0; attempt < 6 && !inViewport(row); attempt++) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    }
+    if (!inViewport(row)) row.scrollIntoView({ block: 'start' })
+    console.debug('[qnav] jump: scrolled inViewport=', inViewport(row))
     row.classList.add('qnav-flash')
     window.setTimeout(() => row.classList.remove('qnav-flash'), 1500)
   }
