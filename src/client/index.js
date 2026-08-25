@@ -10,9 +10,11 @@
  * the `useSession` standard hook, lists the user messages, and scrolls the
  * chat to the chosen message's rendered row (`[data-chat-anchor-key]`).
  *
- * On mount the panel pages the session's full history in (serial loadOlder()
- * through the sessions service face), so questions outside the initially
- * loaded tail page still appear in the list and stay jumpable.
+ * The list is a merge of two sources: a full history index fetched straight
+ * through the `sessions.history` RPC (so questions outside the lazily loaded
+ * tail page still appear, without rendering them into the chat), and the live
+ * snapshot rows. Clicking an out-of-window question pages the chat window back
+ * to it on demand before scrolling.
  */
 import * as React from 'react'
 import styles from './styles.css'
@@ -24,6 +26,7 @@ const zh = {
   'panel.empty': '暂无提问',
   'panel.close': '关闭',
   'panel.loading': '正在加载全部提问…',
+  'panel.locating': '正在定位该提问…',
 }
 
 const en = {
@@ -31,36 +34,76 @@ const en = {
   'panel.empty': 'No questions yet',
   'panel.close': 'Close',
   'panel.loading': 'Loading all questions…',
+  'panel.locating': 'Locating the question…',
 }
 
-export const inject = ['slots', 'locale', 'sessions']
+export const inject = ['slots', 'locale', 'sessions', 'connection']
+
+/** One question indexed straight from the history RPC (seq-addressed, key-free). */
+// (questions merge live snapshot rows keyed by seq; see QnavPanel)
 
 /**
- * Page one session's history window back to its start, so the navigation list
- * covers every question rather than only the loaded tail page. Serial
- * `loadOlder()` calls until `hasMore` clears; bounded wait and round caps keep
- * a never-opening or stalled window from hanging the loop.
- * @param sessions - the client sessions service face.
- * @param sessionId - the session to fully load.
- * @returns completion of the paging loop.
+ * Page the session's full history through the raw history RPC and index every
+ * user question — without touching the chat window, which keeps its lazy tail
+ * page. Serial `sessions.history` calls from the tail backwards until
+ * `hasMore` clears; the round cap keeps a huge or failing session bounded.
+ * @param api - the shared IApiClient (ctx.connection.api).
+ * @param sessionId - the session to index.
+ * @returns ascending-seq questions `{ seq, text }`; `complete` false when the cap cut paging short.
  */
-async function loadAllHistory(sessions, sessionId) {
+async function fetchAllQuestions(api, sessionId) {
+  const out = []
+  let beforeSeq
+  for (let round = 0; round < 400; round++) {
+    const { result } = await api.sessions.history({
+      sessionId,
+      ...(beforeSeq === undefined ? {} : { beforeSeq }),
+      maxMessages: 50,
+    })
+    if (!result.ok) break
+    for (const entry of result.value.events) {
+      const ev = entry.event
+      if (ev.type !== 'user/message' || ev.data?.source?.kind !== 'user') continue
+      const text = messageText(ev.data.content)
+      if (text !== '') out.push({ seq: ev.seq, text })
+    }
+    if (!result.value.hasMore) return { questions: out.sort((a, b) => a.seq - b.seq), complete: true }
+    const first = result.value.events[0]?.event.seq
+    if (first === undefined) break
+    beforeSeq = first
+  }
+  return { questions: out.sort((a, b) => a.seq - b.seq), complete: false }
+}
+
+/**
+ * Resolve the chat-row key for one seq-addressed question. Rows already in the
+ * window resolve immediately; older ones page in through serial `loadOlder()`
+ * until the target seq enters the window (on-demand, never past it).
+ * @param sessions - the client sessions service face.
+ * @param sessionId - the session holding the question.
+ * @param seq - the question's history event seq.
+ * @returns the chat node key, or undefined when the row could not be loaded.
+ */
+async function resolveJumpKey(sessions, sessionId, seq) {
   const actx = sessions.scope(sessionId)
   const face = actx === undefined ? undefined : sessions.sessionOf(actx)
-  if (face === undefined) return
-  // loadOlder is a no-op before the window opens; wait out the tail-page pull.
-  for (let waited = 0; waited < 100 && face.getSnapshot().openState !== 'open'; waited++) {
-    await new Promise((resolve) => setTimeout(resolve, 150))
-  }
-  for (let round = 0; round < 400; round++) {
+  if (face === undefined) return undefined
+  const findKey = () => {
     const snap = face.getSnapshot()
-    if (snap.openState !== 'open' || !snap.hasMore) return
-    const before = snap.chat.order.length
-    await face.loadOlder()
-    // A round that grew nothing while hasMore held means the paging stalled
-    // (in-flight guard or transport failure) — stop instead of spinning.
-    if (face.getSnapshot().chat.order.length === before) return
+    for (const key of snap.chat.order) {
+      const node = snap.chat.nodes.get(key)
+      if (node !== undefined && node.kind === 'user' && node.seq === seq) return key
+    }
+    return undefined
   }
+  let key = findKey()
+  for (let round = 0; key === undefined && round < 400; round++) {
+    const snap = face.getSnapshot()
+    if (snap.openState !== 'open' || !snap.hasMore) break
+    await face.loadOlder()
+    key = findKey()
+  }
+  return key
 }
 
 /**
@@ -145,40 +188,51 @@ function QnavOverlay(props) {
 
 /**
  * The session-scoped panel: the floating trigger plus the expandable list of
- * the session's user questions. Clicking a question scrolls the chat to that
- * message's row and flashes it. Mounting pages the full history in (see
- * loadAllHistory) so the list covers questions outside the loaded tail page.
+ * the session's user questions. The list merges a full history index fetched
+ * straight through the history RPC (covering questions outside the lazy tail
+ * page) with the live snapshot rows; clicking a question jumps to its row,
+ * paging the window on demand when the row is not loaded yet.
  * @param props - standard kit (useSession, t, sessionId) plus the injected
- *   loadAllHistory callback.
+ *   fetchAllQuestions and resolveJumpKey callbacks.
  */
 function QnavPanel(props) {
-  const { useSession, t, sessionId, loadAllHistory } = props
+  const { useSession, t, sessionId, fetchAllQuestions, resolveJumpKey } = props
   const [expanded, setExpanded] = React.useState(true)
+  const [remoteQuestions, setRemoteQuestions] = React.useState([])
+  const [locating, setLocating] = React.useState(false)
   const right = useCenterRight()
 
-  // Kick the full-history preload once per session. The callback is rebuilt by
-  // the slot inject factory on every render (identity-unstable), so the latest
-  // one rides a ref while the effect keys on the session id only.
-  const loadRef = React.useRef(loadAllHistory)
-  loadRef.current = loadAllHistory
+  // Index the full history once per session. The callback is rebuilt by the
+  // slot inject factory on every render (identity-unstable), so the latest one
+  // rides a ref while the effect keys on the session id only.
+  const fetchRef = React.useRef(fetchAllQuestions)
+  fetchRef.current = fetchAllQuestions
+  const [indexing, setIndexing] = React.useState(false)
   React.useEffect(() => {
-    void loadRef.current()
+    let cancelled = false
+    setRemoteQuestions([])
+    setIndexing(true)
+    void (async () => {
+      const { questions } = await fetchRef.current()
+      if (!cancelled) {
+        setRemoteQuestions(questions)
+        setIndexing(false)
+      }
+    })()
+    return () => { cancelled = true }
   }, [sessionId])
 
-  // True while the preload is still paging (or the user is paging manually).
-  const loadingAll = useSession((s) => s.hasMore || s.loadingOlder, (a, b) => a === b)
-
-  // Derive the ordered user-message list from the chat snapshot. `order` is a
-  // stable reference that changes only on structural moves; nodes are read
-  // through the live store so a newly appended user message republishes.
-  const questions = useSession((s) => {
+  // Live rows from the chat snapshot (loaded window only). `order` is a stable
+  // reference that changes only on structural moves; nodes are read through
+  // the live store so a newly appended user message republishes.
+  const liveQuestions = useSession((s) => {
     const out = []
     for (const key of s.chat.order) {
       const node = s.chat.nodes.get(key)
       if (node === undefined || node.kind !== 'user') continue
       const text = messageText(node.data.content)
       if (text === '') continue
-      out.push({ key, text })
+      out.push({ key, seq: node.seq, text })
     }
     return out
   }, (a, b) => {
@@ -189,7 +243,27 @@ function QnavPanel(props) {
     return true
   })
 
-  const jump = (key) => {
+  // Merge: the remote index is the full skeleton; live rows override their seq
+  // twin (they carry the jump key). Ascending seq keeps the order stable.
+  const questions = React.useMemo(() => {
+    const bySeq = new Map()
+    for (const q of remoteQuestions) bySeq.set(q.seq, { seq: q.seq, text: q.text, key: undefined })
+    for (const q of liveQuestions) bySeq.set(q.seq, { seq: q.seq, text: q.text, key: q.key })
+    return [...bySeq.values()].sort((a, b) => a.seq - b.seq)
+  }, [remoteQuestions, liveQuestions])
+
+  const jump = async (item) => {
+    let key = item.key
+    if (key === undefined) {
+      // Row outside the loaded window: page the window back to it on demand.
+      setLocating(true)
+      try {
+        key = await resolveJumpKey(item.seq)
+      } finally {
+        setLocating(false)
+      }
+    }
+    if (key === undefined) return
     const row = document.querySelector(`[data-chat-anchor-key="${CSS.escape(key)}"]`)
     if (row === null) return
     row.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -216,7 +290,7 @@ function QnavPanel(props) {
           '\u00d7',
         ),
       ),
-      loadingAll ? React.createElement('div', { className: 'qnav-loading' }, t('panel.loading')) : null,
+      (indexing || locating) ? React.createElement('div', { className: 'qnav-loading' }, locating ? t('panel.locating') : t('panel.loading')) : null,
       questions.length === 0
         ? React.createElement('div', { className: 'qnav-empty' }, t('panel.empty'))
         : React.createElement(
@@ -225,10 +299,10 @@ function QnavPanel(props) {
           questions.map((q, i) => React.createElement(
             'button',
             {
-              key: q.key,
+              key: q.seq,
               type: 'button',
               className: 'qnav-item',
-              onClick: () => jump(q.key),
+              onClick: () => { void jump(q) },
             },
             React.createElement('span', { className: 'qnav-item-text' }, q.text),
           )),
@@ -283,7 +357,8 @@ export function apply(ctx) {
     name: 'qnav.panel',
     locale: NS,
     inject: (sessionId) => ({
-      loadAllHistory: () => loadAllHistory(ctx.sessions, sessionId),
+      fetchAllQuestions: () => fetchAllQuestions(ctx.connection.api, sessionId),
+      resolveJumpKey: (seq) => resolveJumpKey(ctx.sessions, sessionId, seq),
     }),
   }, QnavPanel))
 }
