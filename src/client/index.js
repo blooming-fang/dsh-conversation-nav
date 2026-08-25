@@ -94,7 +94,9 @@ async function resolveJumpKey(sessions, sessionId, seq) {
       const node = snap.chat.nodes.get(key)
       // Both user-authored kinds count: turn-opening questions render as
       // 'user', mid-turn ones as 'steering' — same source.kind on the wire.
-      if (node !== undefined && (node.kind === 'user' || node.kind === 'steering') && node.seq === seq) {
+      // The event seq lives on the node payload (`data.seq`), not on the
+      // ChatConversationViewNode shell.
+      if (node !== undefined && (node.kind === 'user' || node.kind === 'steering') && node.data?.seq === seq) {
         return key
       }
     }
@@ -237,7 +239,7 @@ function QnavPanel(props) {
       if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
       const text = messageText(node.data.content)
       if (text === '') continue
-      out.push({ key, seq: node.seq, text })
+      out.push({ key, seq: node.data.seq, text })
     }
     return out
   }, (a, b) => {
