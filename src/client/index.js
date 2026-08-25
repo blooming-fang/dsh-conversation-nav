@@ -92,7 +92,11 @@ async function resolveJumpKey(sessions, sessionId, seq) {
     const snap = face.getSnapshot()
     for (const key of snap.chat.order) {
       const node = snap.chat.nodes.get(key)
-      if (node !== undefined && node.kind === 'user' && node.seq === seq) return key
+      // Both user-authored kinds count: turn-opening questions render as
+      // 'user', mid-turn ones as 'steering' — same source.kind on the wire.
+      if (node !== undefined && (node.kind === 'user' || node.kind === 'steering') && node.seq === seq) {
+        return key
+      }
     }
     return undefined
   }
@@ -222,14 +226,15 @@ function QnavPanel(props) {
     return () => { cancelled = true }
   }, [sessionId])
 
-  // Live rows from the chat snapshot (loaded window only). `order` is a stable
+  // Live rows from the chat snapshot (loaded window only). Both user-authored
+  // kinds count — 'user' and mid-turn 'steering'. `order` is a stable
   // reference that changes only on structural moves; nodes are read through
   // the live store so a newly appended user message republishes.
   const liveQuestions = useSession((s) => {
     const out = []
     for (const key of s.chat.order) {
       const node = s.chat.nodes.get(key)
-      if (node === undefined || node.kind !== 'user') continue
+      if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
       const text = messageText(node.data.content)
       if (text === '') continue
       out.push({ key, seq: node.seq, text })
@@ -264,7 +269,14 @@ function QnavPanel(props) {
       }
     }
     if (key === undefined) return
-    const row = document.querySelector(`[data-chat-anchor-key="${CSS.escape(key)}"]`)
+    // Prepended rows reach the DOM one React commit after loadOlder resolves;
+    // poll briefly so a fresh page is not missed by the first query.
+    const selector = `[data-chat-anchor-key="${CSS.escape(key)}"]`
+    let row = document.querySelector(selector)
+    for (let waited = 0; row === null && waited < 40; waited++) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      row = document.querySelector(selector)
+    }
     if (row === null) return
     row.scrollIntoView({ behavior: 'smooth', block: 'start' })
     row.classList.add('qnav-flash')
