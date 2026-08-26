@@ -82,9 +82,12 @@ async function fetchAllQuestions(api, sessionId) {
  * @param sessions - the client sessions service face.
  * @param sessionId - the session holding the question.
  * @param seq - the question's history event seq.
+ * @param opts - `{ isCancelled }` polled between paging rounds so a superseded
+ *   jump stops paging immediately instead of racing the replacement jump's own
+ *   `loadOlder` loop on the same session.
  * @returns the chat node key, or undefined when the row could not be loaded.
  */
-async function resolveJumpKey(sessions, sessionId, seq) {
+async function resolveJumpKey(sessions, sessionId, seq, opts = {}) {
   const actx = sessions.scope(sessionId)
   const face = actx === undefined ? undefined : sessions.sessionOf(actx)
   if (face === undefined) return undefined
@@ -105,9 +108,11 @@ async function resolveJumpKey(sessions, sessionId, seq) {
   }
   let key = findKey()
   for (let round = 0; key === undefined && round < 400; round++) {
+    if (opts.isCancelled?.()) return undefined
     const snap = face.getSnapshot()
     if (snap.openState !== 'open' || !snap.hasMore) break
     await face.loadOlder()
+    if (opts.isCancelled?.()) return undefined
     key = findKey()
   }
   return key
@@ -260,13 +265,21 @@ function QnavPanel(props) {
     return [...bySeq.values()].sort((a, b) => a.seq - b.seq)
   }, [remoteQuestions, liveQuestions])
 
+  // Jumps are long async chains (page-in → wait for DOM → scroll retries), so
+  // a second click must retire the first: every await point checks its ticket
+  // and bails when a newer click holds the current one. Without this, two
+  // chains race on loadOlder and their smooth scrolls cancel each other.
+  const jumpTicketRef = React.useRef(0)
   const jump = async (item) => {
+    const ticket = ++jumpTicketRef.current
+    const stale = () => jumpTicketRef.current !== ticket
     console.debug('[qnav] jump', item)
     let key = item.key
     if (key === undefined) {
       // Row outside the loaded window: page the window back to it on demand.
       setLocating(true)
-      key = await resolveJumpKey(item.seq)
+      key = await resolveJumpKey(item.seq, { isCancelled: stale })
+      if (stale()) return
       if (key === undefined) {
         console.debug('[qnav] jump: key unresolved for seq', item.seq)
         setLocating(false)
@@ -278,9 +291,11 @@ function QnavPanel(props) {
     const selector = `[data-chat-anchor-key="${CSS.escape(key)}"]`
     let row = document.querySelector(selector)
     for (let waited = 0; row === null && waited < 100; waited++) {
+      if (stale()) return
       await new Promise((resolve) => setTimeout(resolve, 100))
       row = document.querySelector(selector)
     }
+    if (stale()) return
     setLocating(false)
     if (row === null) {
       console.debug('[qnav] jump: row never appeared', selector)
@@ -294,9 +309,11 @@ function QnavPanel(props) {
       return rect.top >= -20 && rect.top < window.innerHeight - 60
     }
     for (let attempt = 0; attempt < 6 && !inViewport(row); attempt++) {
+      if (stale()) return
       row.scrollIntoView({ behavior: 'smooth', block: 'start' })
       await new Promise((resolve) => setTimeout(resolve, 400))
     }
+    if (stale()) return
     if (!inViewport(row)) row.scrollIntoView({ block: 'start' })
     console.debug('[qnav] jump: scrolled inViewport=', inViewport(row))
     row.classList.add('qnav-flash')
@@ -391,7 +408,7 @@ export function apply(ctx) {
     locale: NS,
     inject: (sessionId) => ({
       fetchAllQuestions: () => fetchAllQuestions(ctx.connection.api, sessionId),
-      resolveJumpKey: (seq) => resolveJumpKey(ctx.sessions, sessionId, seq),
+      resolveJumpKey: (seq, opts) => resolveJumpKey(ctx.sessions, sessionId, seq, opts),
     }),
   }, QnavPanel))
 }
