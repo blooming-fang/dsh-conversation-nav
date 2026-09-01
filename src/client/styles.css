@@ -20,6 +20,17 @@
   pointer-events: none;
 }
 
+/* Hover region: hosts the trigger with the panel absolutely positioned over
+ * it, so the open panel replaces the trigger instead of sitting beside it.
+ * Kept off the column's right edge so it isn't glued to the window. */
+.qnav-hover-region {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
 /* The trigger button: a compact vertical pill at the column's right edge. */
 .qnav-trigger {
   pointer-events: auto;
@@ -29,7 +40,6 @@
   gap: 6px;
   width: 36px;
   padding: 12px 0;
-  margin-right: 8px;
   border: 1px solid rgba(127, 127, 127, 0.35);
   border-radius: 18px;
   background: #ffffff;
@@ -58,18 +68,43 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The expanded panel: a narrow card beside the column's right edge. */
+/* The panel: a narrow card that overlays the trigger (instead of sitting
+ * beside it), hidden by default and shown on hover. Positioned at the
+ * trigger's center and sliding in from the right; `z-index` keeps it above the
+ * trigger it covers. Visibility fades out after the opacity/transform
+ * transition so the exit animation plays before the panel drops out of the
+ * hit region; the open class reveals it immediately on entry. */
 .qnav-panel {
   pointer-events: auto;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   width: 260px;
   max-height: min(60vh, 480px);
-  margin-right: 8px;
   border: 1px solid rgba(127, 127, 127, 0.25);
   border-radius: 12px;
   background: #ffffff;
   overflow: hidden;
+  opacity: 0;
+  transform: translate(10px, -50%);
+  visibility: hidden;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 0s linear 180ms;
+}
+
+.qnav-panel-open {
+  opacity: 1;
+  transform: translate(0, -50%);
+  visibility: visible;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 0s;
 }
 
 .qnav-panel-header {
@@ -91,24 +126,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.qnav-panel-close {
-  pointer-events: auto;
-  margin-left: auto;
-  border: none;
-  background: none;
-  color: #5f6672;
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
-}
-
-.qnav-panel-close:hover {
-  color: #1f2329;
-  background: rgba(0, 0, 0, 0.06);
 }
 
 .qnav-list {

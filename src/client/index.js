@@ -209,7 +209,7 @@ function QnavOverlay(props) {
  */
 function QnavPanel(props) {
   const { useSession, t, sessionId, fetchAllQuestions, resolveJumpKey } = props
-  const [expanded, setExpanded] = React.useState(true)
+  const [open, setOpen] = React.useState(false)
   const [remoteQuestions, setRemoteQuestions] = React.useState([])
   const [locating, setLocating] = React.useState(false)
   const right = useCenterRight()
@@ -270,16 +270,16 @@ function QnavPanel(props) {
 
   // Default the list to its end: once the full history index has settled and
   // the questions are rendered, wait two frames so layout is final, then pin
-  // the scrollport to the bottom. Re-runs when the panel expands or the merged
+  // the scrollport to the bottom. Re-runs when the panel opens or the merged
   // question list grows, so a freshly opened or repopulated panel starts at
   // the newest question.
   React.useEffect(() => {
-    if (!expanded || indexing) return
+    if (!open || indexing) return
     const el = listRef.current
     if (el === null) return
     let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight }) })
     return () => cancelAnimationFrame(frame)
-  }, [expanded, indexing, questions])
+  }, [open, indexing, questions])
 
   // Jumps are long async chains (page-in → wait for DOM → scroll retries), so
   // a second click must retire the first: every await point checks its ticket
@@ -336,25 +336,25 @@ function QnavPanel(props) {
     window.setTimeout(() => row.classList.remove('qnav-flash'), 1500)
   }
 
-  const panel = expanded
-    ? React.createElement(
+  // The panel and trigger always render together inside a hover region; the
+  // panel is shown/hidden through a class so its open/close can animate. The
+  // region wraps both, so the pointer can move from the trigger onto the panel
+  // (and back) without the panel flickering closed.
+  const panelClassName = open ? 'qnav-panel qnav-panel-open' : 'qnav-panel'
+  const panel = React.createElement(
+    'div',
+    {
+      className: 'qnav-hover-region',
+      onMouseLeave: () => setOpen(false),
+    },
+    React.createElement(
       'div',
-      { className: 'qnav-panel' },
+      { className: panelClassName },
       React.createElement(
         'div',
         { className: 'qnav-panel-header' },
         React.createElement('span', null, t('panel.title')),
         locating ? React.createElement('span', { className: 'qnav-head-status' }, t('panel.locating')) : null,
-        React.createElement(
-          'button',
-          {
-            type: 'button',
-            className: 'qnav-panel-close',
-            'aria-label': t('panel.close'),
-            onClick: () => setExpanded(false),
-          },
-          '\u00d7',
-        ),
       ),
       indexing ? React.createElement('div', { className: 'qnav-loading' }, t('panel.loading')) : null,
       questions.length === 0
@@ -373,18 +373,20 @@ function QnavPanel(props) {
             React.createElement('span', { className: 'qnav-item-text' }, q.text),
           )),
         ),
-    )
-    : React.createElement(
+    ),
+    React.createElement(
       'button',
       {
         type: 'button',
         className: 'qnav-trigger',
         title: t('panel.title'),
-        onClick: () => setExpanded(true),
+        onMouseEnter: () => setOpen(true),
+        onClick: () => setOpen(true),
       },
       React.createElement('span', { className: 'qnav-trigger-icon' }, 'Q'),
       React.createElement('span', { className: 'qnav-trigger-count' }, String(questions.length)),
-    )
+    ),
+  )
 
   return React.createElement(
     'div',
