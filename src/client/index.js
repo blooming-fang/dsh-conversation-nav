@@ -213,6 +213,9 @@ function QnavPanel(props) {
   const [remoteQuestions, setRemoteQuestions] = React.useState([])
   const [locating, setLocating] = React.useState(false)
   const right = useCenterRight()
+  // The scrolling question list; pinned to its end once it settles so the
+  // newest questions are in view when the panel opens.
+  const listRef = React.useRef(null)
 
   // Index the full history once per session. The callback is rebuilt by the
   // slot inject factory on every render (identity-unstable), so the latest one
@@ -264,6 +267,19 @@ function QnavPanel(props) {
     for (const q of liveQuestions) bySeq.set(q.seq, { seq: q.seq, text: q.text, key: q.key })
     return [...bySeq.values()].sort((a, b) => a.seq - b.seq)
   }, [remoteQuestions, liveQuestions])
+
+  // Default the list to its end: once the full history index has settled and
+  // the questions are rendered, wait two frames so layout is final, then pin
+  // the scrollport to the bottom. Re-runs when the panel expands or the merged
+  // question list grows, so a freshly opened or repopulated panel starts at
+  // the newest question.
+  React.useEffect(() => {
+    if (!expanded || indexing) return
+    const el = listRef.current
+    if (el === null) return
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { el.scrollTop = el.scrollHeight }) })
+    return () => cancelAnimationFrame(frame)
+  }, [expanded, indexing, questions])
 
   // Jumps are long async chains (page-in → wait for DOM → scroll retries), so
   // a second click must retire the first: every await point checks its ticket
@@ -345,7 +361,7 @@ function QnavPanel(props) {
         ? React.createElement('div', { className: 'qnav-empty' }, t('panel.empty'))
         : React.createElement(
           'div',
-          { className: 'qnav-list' },
+          { className: 'qnav-list', ref: listRef },
           questions.map((q, i) => React.createElement(
             'button',
             {
