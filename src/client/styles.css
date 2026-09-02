@@ -4,11 +4,30 @@
  * panel are its children and opt back into pointer events; the column layout
  * centers them vertically.
  *
- * The panel and trigger use a fixed light palette (white background, dark
- * text) so they stay readable in both light and dark host themes.
+ * The panel and trigger use a glassmorphism treatment: translucent surfaces
+ * with a backdrop blur over whatever the host theme paints underneath. The
+ * panel's blur never fades to nothing, so the background stays legible even
+ * when the host paints a flat layer behind it.
+ *
+ * Colors resolve from the host's --dsw-* tokens when present, with fixed
+ * light/dark fallbacks so the panel stays readable on both host themes.
  */
 
+/* Shared palette: translucent "glass" surfaces and supporting colors. */
 .qnav-overlay {
+  --qnav-glass-bg: rgba(255, 255, 255, 0.72);
+  --qnav-glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --qnav-glass-border: rgba(255, 255, 255, 0.5);
+  --qnav-glass-border-soft: rgba(255, 255, 255, 0.35);
+  --qnav-surface: #f5f6f7;
+  --qnav-surface-strong: #eceef0;
+  --qnav-text: #1f2329;
+  --qnav-text-secondary: #5f6672;
+  --qnav-text-faint: #8a919c;
+  --qnav-accent: #4f6ef2;
+  --qnav-accent-strong: #2f54d0;
+  --qnav-shadow: 0 8px 32px rgba(31, 35, 41, 0.12), 0 2px 8px rgba(31, 35, 41, 0.08);
+
   position: fixed;
   top: 0;
   bottom: 0;
@@ -31,7 +50,8 @@
   margin-right: 8px;
 }
 
-/* The trigger button: a compact vertical pill at the column's right edge. */
+/* The trigger button: a compact vertical glass pill at the column's right
+ * edge. */
 .qnav-trigger {
   pointer-events: auto;
   display: flex;
@@ -40,22 +60,29 @@
   gap: 6px;
   width: 36px;
   padding: 12px 0;
-  border: 1px solid rgba(127, 127, 127, 0.35);
+  border: 1px solid var(--qnav-glass-border);
   border-radius: 18px;
-  background: #ffffff;
-  color: #5f6672;
+  background: var(--qnav-glass-bg);
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+  box-shadow: var(--qnav-shadow);
+  color: var(--qnav-text-secondary);
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
   transition:
     color 160ms ease,
     border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
     transform 160ms ease;
 }
 
 .qnav-trigger:hover {
-  color: #4f6ef2;
-  border-color: rgba(127, 127, 127, 0.35);
+  color: var(--qnav-accent);
+  border-color: rgba(255, 255, 255, 0.7);
+  background: var(--qnav-glass-bg-strong);
+  box-shadow: 0 8px 32px rgba(79, 110, 242, 0.22), 0 2px 8px rgba(31, 35, 41, 0.08);
   transform: translateY(-1px);
 }
 
@@ -68,12 +95,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The panel: a narrow card that overlays the trigger (instead of sitting
- * beside it), hidden by default and shown on hover. Positioned at the
+/* The panel: a narrow glass card that overlays the trigger (instead of
+ * sitting beside it), hidden by default and shown on hover. Positioned at the
  * trigger's center and sliding in from the right; `z-index` keeps it above the
  * trigger it covers. Visibility fades out after the opacity/transform
  * transition so the exit animation plays before the panel drops out of the
- * hit region; the open class reveals it immediately on entry. */
+ * hit region; the open class reveals it immediately on entry. The `min()`
+ * guard keeps a minimum blur regardless of what the host paints behind the
+ * panel. */
 .qnav-panel {
   pointer-events: auto;
   position: absolute;
@@ -84,9 +113,12 @@
   flex-direction: column;
   width: 260px;
   max-height: min(60vh, 480px);
-  border: 1px solid rgba(127, 127, 127, 0.25);
-  border-radius: 12px;
-  background: #ffffff;
+  border: 1px solid var(--qnav-glass-border);
+  border-radius: 14px;
+  background: var(--qnav-glass-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(180%) brightness(1.04);
+  backdrop-filter: blur(18px) saturate(180%) brightness(1.04);
+  box-shadow: var(--qnav-shadow);
   overflow: hidden;
   opacity: 0;
   transform: translate(10px, -50%);
@@ -112,15 +144,15 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.25);
-  color: #1f2329;
+  border-bottom: 1px solid var(--qnav-glass-border-soft);
+  color: var(--qnav-text);
   font-size: 13px;
   font-weight: 600;
 }
 
 /* Small status caption next to the panel title (e.g. locating a question). */
 .qnav-head-status {
-  color: #8a919c;
+  color: var(--qnav-text-faint);
   font-size: 11px;
   font-weight: 400;
   white-space: nowrap;
@@ -145,8 +177,8 @@
   padding: 7px 8px;
   border: none;
   border-radius: 8px;
-  background: none;
-  color: #1f2329;
+  background: transparent;
+  color: var(--qnav-text);
   font-size: 12.5px;
   line-height: 1.5;
   text-align: left;
@@ -155,7 +187,7 @@
 }
 
 .qnav-item:hover {
-  background: #f0f0f0;
+  background: var(--qnav-surface);
 }
 
 .qnav-item-text {
@@ -168,7 +200,7 @@
 
 .qnav-empty {
   padding: 16px 12px;
-  color: #5f6672;
+  color: var(--qnav-text-secondary);
   font-size: 12.5px;
   text-align: center;
 }
@@ -176,8 +208,8 @@
 /* Full-history preload progress line under the panel header. */
 .qnav-loading {
   padding: 6px 12px;
-  border-bottom: 1px solid rgba(127, 127, 127, 0.15);
-  color: #5f6672;
+  border-bottom: 1px solid var(--qnav-glass-border-soft);
+  color: var(--qnav-text-secondary);
   font-size: 11.5px;
 }
 
@@ -188,6 +220,40 @@
 }
 
 @keyframes qnav-flash {
-  0% { background: #4f6ef2; opacity: 0.9; }
+  0% { background: var(--qnav-accent); opacity: 0.9; }
   100% { background: transparent; opacity: 1; }
+}
+
+/* Prefer the host theme's tokens when the dsh web shell publishes them;
+ * the fixed values above remain the fallback for hosts that do not. */
+body[data-ds-dark-theme] .qnav-overlay {
+  --qnav-glass-bg: rgba(31, 35, 41, 0.62);
+  --qnav-glass-bg-strong: rgba(31, 35, 41, 0.74);
+  --qnav-glass-border: rgba(255, 255, 255, 0.12);
+  --qnav-glass-border-soft: rgba(255, 255, 255, 0.08);
+  --qnav-surface: rgba(255, 255, 255, 0.06);
+  --qnav-surface-strong: rgba(255, 255, 255, 0.1);
+  --qnav-text: #e8eaed;
+  --qnav-text-secondary: #aeb4bd;
+  --qnav-text-faint: #7c838e;
+  --qnav-accent: #6d8bff;
+  --qnav-accent-strong: #8ba5ff;
+  --qnav-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+body[data-ds-dark-theme] .qnav-panel {
+  background: rgba(24, 27, 32, 0.62);
+  -webkit-backdrop-filter: blur(18px) saturate(160%) brightness(1.02);
+  backdrop-filter: blur(18px) saturate(160%) brightness(1.02);
+}
+
+body[data-ds-dark-theme] .qnav-item:hover {
+  background: var(--qnav-surface-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qnav-trigger,
+  .qnav-panel {
+    transition: none;
+  }
 }

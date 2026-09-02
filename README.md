@@ -15,12 +15,13 @@
 ```sh
 npm install
 npm run build        # 生成 lib/client.js（esbuild + __ModuleLoader__ 包装）
+npm run pack         # 生成 dsh-conversation-nav-0.5.0.tgz
 ```
 
 ## 安装到 web profile
 
 ```sh
-dsh plugin --profile web add D:\plugin\deepseek-harness\plugins\dsh-qnav
+dsh plugin --profile web add D:\plugin\deepseek-harness\plugins\dsh-qnav\dsh-conversation-nav-0.5.0.tgz
 ```
 
 然后启动/重启 `dsh web` 并打开 GUI。一旦打开包含至少一条用户消息的会话，会话栏右边缘就会出现触发按钮。
